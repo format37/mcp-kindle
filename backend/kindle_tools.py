@@ -4,6 +4,7 @@ import os
 import re
 import smtplib
 import tempfile
+from datetime import datetime, timezone
 from email import encoders
 from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
@@ -60,7 +61,7 @@ def split_pages(md_text: str) -> list[str]:
 
 def md_to_html(md_text: str) -> str:
     """Convert markdown text to HTML."""
-    return markdown.markdown(md_text, extensions=["tables", "fenced_code", "smarty"])
+    return markdown.markdown(md_text, extensions=["tables", "fenced_code"])
 
 
 def build_epub(pages: list[str], title: str, output_path: str) -> None:
@@ -68,7 +69,14 @@ def build_epub(pages: list[str], title: str, output_path: str) -> None:
     book = epub.EpubBook()
     book.set_identifier("md2epub-" + re.sub(r"\W+", "-", title.lower()))
     book.set_title(title)
-    book.set_language("en")
+    text = " ".join(pages)
+    if re.search(r"[\u3040-\u30FF\u4E00-\u9FFF]", text):
+        lang = "ja"
+    elif re.search(r"[\u0400-\u04FF]", text):
+        lang = "ru"
+    else:
+        lang = "en"
+    book.set_language(lang)
 
     style = epub.EpubItem(
         uid="style",
@@ -105,6 +113,16 @@ def build_epub(pages: list[str], title: str, output_path: str) -> None:
     epub.write_epub(output_path, book, {})
 
 
+def _make_attachment_filename(title: str) -> str:
+    """Build a unique attachment filename with datetime prefix."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    safe = re.sub(r"[^\w\s-]", "", title).strip()
+    safe = re.sub(r"\s+", "_", safe)[:80]
+    if not safe:
+        safe = "book"
+    return f"{ts}_{safe}.epub"
+
+
 def send_epub_to_kindle(
     epub_path: str,
     sender_email: str,
@@ -120,12 +138,12 @@ def send_epub_to_kindle(
 
     msg.attach(MIMEText("", "plain"))
 
-    filepath = Path(epub_path)
-    with open(filepath, "rb") as f:
+    filename = _make_attachment_filename(title)
+    with open(epub_path, "rb") as f:
         part = MIMEBase("application", "epub+zip")
         part.set_payload(f.read())
     encoders.encode_base64(part)
-    part.add_header("Content-Disposition", f"attachment; filename={filepath.name}")
+    part.add_header("Content-Disposition", "attachment", filename=filename)
     msg.attach(part)
 
     with smtplib.SMTP("smtp.gmail.com", 587) as server:
