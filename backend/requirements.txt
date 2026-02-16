@@ -1,0 +1,11 @@
+# Web framework and MCP
+fastmcp>=0.6.0
+uvicorn>=0.32.1
+starlette>=0.41.3
+
+# EPUB generation
+EbookLib>=0.18
+Markdown>=3.4
+
+# Environment
+python-dotenv>=1.0.0

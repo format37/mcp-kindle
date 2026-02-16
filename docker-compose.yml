@@ -1,0 +1,21 @@
+services:
+  mcp-kindle:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mcp-kindle
+    environment:
+      - PORT=8018
+      - TZ=UTC
+      - MCP_NAME=kindle
+    ports:
+      - "8018:8018"
+    volumes:
+      - ./.env:/app/.env:ro
+    networks:
+      - default
+      - mcp-shared
+
+networks:
+  mcp-shared:
+    external: true
