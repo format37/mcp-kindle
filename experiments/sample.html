@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rich HTML — EPUB Stress Test</title>
+  <style>
+    .center { text-align: center; }
+    .small  { font-size: 0.85em; color: #555; }
+  </style>
+  <script>alert("this script must be stripped");</script>
+</head>
+<body>
+
+<!-- Pre-chapter text (should land in a "Preface") -->
+<p class="small">A document that exercises HTML features richer than markdown:
+multi-row tables, definition lists, footnotes, figures, inline SVG, mixed
+nested lists, and embedded images of every supported flavour.</p>
+
+<hr>
+
+<h1 id="ch1">Chapter 1 — Typography &amp; Inline Elements</h1>
+
+<p>This paragraph contains <strong>bold</strong>, <em>italic</em>,
+<u>underline</u>, <s>strikethrough</s>, <mark>highlighted</mark>,
+<code>inline code</code>, and chemistry-style notation like
+H<sub>2</sub>O and E = mc<sup>2</sup>. Special characters: &amp;, &lt;, &gt;,
+&copy;, &mdash;, &hellip;, &laquo;quoted&raquo;, &#8364;100, na&iuml;ve.</p>
+
+<p class="center">A line in <em>centered</em> alignment via class.</p>
+
+<blockquote>
+  <p>"The Internet is becoming the town square for the global village of
+  tomorrow."</p>
+  <blockquote>
+    <p>— nested quote within a quote, to test depth handling.</p>
+  </blockquote>
+  <p class="small">— Bill Gates, paraphrased</p>
+</blockquote>
+
+<p>An external <a href="https://example.com">link to example.com</a>
+and an internal jump to <a href="#ch3">Chapter 3 anchor</a>.</p>
+
+<h2>1.1 A code block</h2>
+
+<pre><code>def quicksort(xs):
+    if len(xs) &lt;= 1:
+        return xs
+    pivot = xs[len(xs) // 2]
+    left  = [x for x in xs if x &lt; pivot]
+    mid   = [x for x in xs if x == pivot]
+    right = [x for x in xs if x &gt; pivot]
+    return quicksort(left) + mid + quicksort(right)
+</code></pre>
+
+<h2>1.2 Footnote references</h2>
+
+<p>Markdown can't natively express this kind of structure<sup id="fnref:1"><a href="#fn:1">1</a></sup>,
+which is one reason HTML feels more agile for book-grade layout<sup id="fnref:2"><a href="#fn:2">2</a></sup>.</p>
+
+<h1 id="ch2">Chapter 2 — Lists &amp; Definition Lists</h1>
+
+<h2>2.1 Mixed nested lists</h2>
+<ol>
+  <li>First top-level item.
+    <ul>
+      <li>Unordered child A
+        <ol>
+          <li>Numbered grandchild i</li>
+          <li>Numbered grandchild ii</li>
+        </ol>
+      </li>
+      <li>Unordered child B</li>
+    </ul>
+  </li>
+  <li>Second top-level item, with <code>inline code</code>.</li>
+  <li>Third top-level item, with a <a href="#ch3">cross-link</a>.</li>
+</ol>
+
+<h2>2.2 Definition list</h2>
+<dl>
+  <dt>EPUB</dt>
+  <dd>An open e-book file format consisting of XHTML, CSS, and metadata, packaged in a ZIP container.</dd>
+  <dt>Kindle</dt>
+  <dd>Amazon's e-reader family. The grayscale e-ink models render only black-and-white imagery.</dd>
+  <dt>MCP</dt>
+  <dd>Model Context Protocol — a standard for exposing tools/resources to LLM agents.</dd>
+</dl>
+
+<h1 id="ch3">Chapter 3 — Tables</h1>
+
+<table>
+  <caption>Comparison of e-reader display technologies (illustrative).</caption>
+  <thead>
+    <tr><th>Family</th><th>Display</th><th colspan="2">Resolution</th><th>Notes</th></tr>
+    <tr><th></th><th></th><th>Width</th><th>Height</th><th></th></tr>
+  </thead>
+  <tbody>
+    <tr><td rowspan="2">Kindle Paperwhite</td><td>e-ink Carta</td><td>1236</td><td>1648</td><td>BW, 300 ppi</td></tr>
+    <tr><td>(11th gen)</td><td>1236</td><td>1648</td><td>warm light</td></tr>
+    <tr><td>Kindle Scribe</td><td>e-ink Carta 1200</td><td>1860</td><td>2480</td><td>BW, stylus input</td></tr>
+    <tr><td>Kindle Colorsoft</td><td>e-ink Kaleido 3</td><td>1264</td><td>1680</td><td>Color, lower DPI for color layer</td></tr>
+  </tbody>
+  <tfoot>
+    <tr><td colspan="5" class="small">Figures simplified — the converter just needs to render rowspan / colspan.</td></tr>
+  </tfoot>
+</table>
+
+<h1 id="ch4">Chapter 4 — Images</h1>
+
+<p>Four image sources are exercised below.</p>
+
+<h2>4.1 Local file (referenced relatively)</h2>
+<figure>
+  <img src="../data/20260512_143022_a1b2c3d4.png" alt="Local BW gradient PNG">
+  <figcaption>Local file: <code>../data/20260512_143022_a1b2c3d4.png</code> (16×16 grayscale gradient).</figcaption>
+</figure>
+
+<h2>4.2 Inline data: URI (1×1 black PNG)</h2>
+<figure>
+  <img alt="1x1 black PNG via data: URI"
+       src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAAAA1BMVEX///+nxBvIAAAACklEQVQI12NgAAAAAgABc3UBGAAAAABJRU5ErkJggg==">
+  <figcaption>Inline 1×1 PNG decoded from a base64 data URI.</figcaption>
+</figure>
+
+<h2>4.3 Inline SVG (kept in-place, not embedded as a file)</h2>
+<figure>
+  <svg xmlns="http://www.w3.org/2000/svg" width="160" height="60" viewBox="0 0 160 60">
+    <rect x="0" y="0" width="160" height="60" fill="#ffffff" stroke="#000" />
+    <line x1="10" y1="50" x2="150" y2="10" stroke="#000" stroke-width="2"/>
+    <text x="80" y="35" font-family="Georgia" font-size="14" text-anchor="middle" fill="#000">Inline SVG</text>
+  </svg>
+  <figcaption>Vector graphics live inline inside the XHTML body.</figcaption>
+</figure>
+
+<h2>4.4 Same local file referenced a second time</h2>
+<p>The converter should de-duplicate: this should reuse the embedded resource.</p>
+<p><img src="../data/20260512_143022_a1b2c3d4.png" alt="Re-reference of gradient" width="64"></p>
+
+<h1 id="ch5">Chapter 5 — Footnotes</h1>
+
+<ol class="footnote">
+  <li id="fn:1">Native markdown footnote syntax exists in some flavours (PHP-Markdown-Extra, GitHub-flavoured, pandoc), but it isn't part of the spec, and most converters drop or mangle the back-references. <a href="#fnref:1">↩</a></li>
+  <li id="fn:2">HTML lets you carry semantic attributes (<code>id</code>, <code>role</code>, <code>aria-label</code>) and arbitrary inline structure, which makes layout decisions easier for a deterministic renderer. <a href="#fnref:2">↩</a></li>
+</ol>
+
+<hr>
+
+<p class="small">— end of document. The following iframe must be stripped:</p>
+<iframe src="https://example.com"></iframe>
+
+</body>
+</html>

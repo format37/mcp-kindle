@@ -6,6 +6,8 @@ starlette>=0.41.3
 # EPUB generation
 EbookLib>=0.18
 Markdown>=3.4
+beautifulsoup4>=4.12
+lxml>=5.0
 
 # Environment
 python-dotenv>=1.0.0

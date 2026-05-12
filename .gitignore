@@ -7,3 +7,4 @@ __pycache__/
 examples/
 data/*
 !data/.gitkeep
+experiments/output/

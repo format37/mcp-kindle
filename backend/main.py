@@ -14,6 +14,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from kindle_tools import convert_and_send
+from html_tools import convert_html_and_send
 
 load_dotenv(".env")
 
@@ -97,6 +98,71 @@ def send_to_kindle(markdown_text: str, title: str = "") -> str:
     try:
         return convert_and_send(
             markdown_text=markdown_text,
+            title=title,
+            sender_email=SENDER_EMAIL,
+            sender_password=GMAIL_APP_PASS,
+            recipient_email=RECIPIENT_EMAIL,
+        )
+    except Exception as e:
+        return f"Error: {e}"
+
+
+@mcp.tool()
+def send_html_to_kindle(html_text: str, title: str = "") -> str:
+    """Convert an HTML document to EPUB and send it to the Kindle.
+
+    HTML is a richer authoring format than markdown: native support for
+    tables with ``rowspan`` / ``colspan`` and ``<caption>``, definition
+    lists (``<dl>``/``<dt>``/``<dd>``), nested ``<blockquote>``,
+    ``<figure>``/``<figcaption>``, inline ``<svg>``, and arbitrary
+    inline markup (``<sup>``, ``<sub>``, ``<mark>``, ``<u>``, ``<s>``).
+    Use this tool when the document is layout-rich; otherwise prefer the
+    markdown tool.
+
+    Chapters
+    --------
+    The body is split into chapters at every ``<h1>`` element. Anything
+    before the first ``<h1>`` becomes a "Preface" chapter.
+
+    Images
+    ------
+    Two image sources are accepted (same destination — embedded into the
+    EPUB, no outbound network calls):
+
+    1. ``data:`` URIs (``<img src="data:image/png;base64,...">``) — decoded
+       and embedded inline. Useful for very small or programmatically
+       generated images.
+    2. Files placed in the host-mounted ``data/`` folder (``/app/data``
+       inside the container). Filename convention:
+       ``{YYYYMMDD_HHMMSS}_{8hex}.{ext}`` (UTC timestamp, 8 lowercase hex
+       chars, e.g. ``20260512_143022_a1b2c3d4.png``). Reference from HTML
+       with the bare filename or a ``data/`` prefix:
+       ``<img src="20260512_143022_a1b2c3d4.png">``.
+       Supported extensions: png, jpg, jpeg, gif, webp.
+
+    External ``http(s)://`` image URLs are *not* fetched — embed them as a
+    file in ``data/`` first.
+
+    The destination Kindle is black-and-white (grayscale e-ink). Render
+    images in grayscale / monochrome and rely on shading, hatching, line
+    style, or labels rather than color coding.
+
+    Sanitization
+    ------------
+    ``<script>``, ``<iframe>``, ``<embed>``, ``<object>``, ``<form>``,
+    ``<style>``, ``on*`` event-handler attributes and ``javascript:``
+    URLs are stripped before conversion.
+
+    Args:
+        html_text: The HTML body (or full document). Fragments are accepted.
+        title: Optional book title. If empty, taken from ``<title>`` then
+            the first ``<h1>``, falling back to "Untitled".
+    """
+    if not SENDER_EMAIL or not GMAIL_APP_PASS or not RECIPIENT_EMAIL:
+        return "Error: missing email configuration (SENDER_EMAIL, GMAIL_APP_PASS, or RECIPIENT_EMAIL)"
+    try:
+        return convert_html_and_send(
+            html_text=html_text,
             title=title,
             sender_email=SENDER_EMAIL,
             sender_password=GMAIL_APP_PASS,
