@@ -10,6 +10,18 @@ Parameters:
 - `markdown_text` (required): Markdown content. Use `{next page}` markers to split into chapters.
 - `title` (optional): Book title. If omitted, extracted from the first `# heading`.
 
+### Images
+
+The markdown may reference images, which are embedded into the EPUB.
+
+1. Drop the image into the host `data/` directory (mounted to `/app/data` in the container).
+2. Use the filename convention `{YYYYMMDD_HHMMSS}_{8-char-uuid}.{ext}` — e.g. `20260512_143022_a1b2c3d4.png`.
+3. Reference it from markdown with the bare filename (or `data/` prefix): `![alt](20260512_143022_a1b2c3d4.png)`.
+
+Supported extensions: png, jpg, jpeg, gif, webp.
+
+Kindles are black-and-white e-ink displays, so render images in grayscale/monochrome and rely on shading or labels rather than color.
+
 ## Setup
 
 ### 1. Gmail App Password

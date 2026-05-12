@@ -5,3 +5,5 @@ __pycache__/
 *.epub
 .claude/
 examples/
+data/*
+!data/.gitkeep

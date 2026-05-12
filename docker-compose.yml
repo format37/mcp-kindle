@@ -12,6 +12,7 @@ services:
       - "8018:8018"
     volumes:
       - ./.env:/app/.env:ro
+      - ./data:/app/data
     networks:
       - default
       - mcp-shared

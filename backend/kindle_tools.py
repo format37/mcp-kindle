@@ -1,5 +1,6 @@
 """Core logic: markdown -> EPUB -> email to Kindle."""
 
+import logging
 import os
 import re
 import smtplib
@@ -10,9 +11,22 @@ from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
+from urllib.parse import unquote
 
 import markdown
 from ebooklib import epub
+
+logger = logging.getLogger(__name__)
+
+DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
+
+IMAGE_MEDIA_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
 
 CSS = """
 body {
@@ -64,8 +78,98 @@ def md_to_html(md_text: str) -> str:
     return markdown.markdown(md_text, extensions=["tables", "fenced_code"])
 
 
-def build_epub(pages: list[str], title: str, output_path: str) -> None:
-    """Assemble pages into an EPUB file."""
+def _resolve_image(src: str, data_dir: Path) -> Path | None:
+    """Resolve a markdown image src to a file inside data_dir.
+
+    Returns the resolved Path if the file exists and stays within data_dir,
+    otherwise None. Skips external URLs and data: URIs.
+    """
+    if not src or src.startswith(("http://", "https://", "data:", "//")):
+        return None
+    fname = unquote(src).strip()
+    # Strip leading "./" and optional "data/" prefix so agents can reference
+    # the image either as "name.png" or "data/name.png".
+    while fname.startswith("./"):
+        fname = fname[2:]
+    if fname.startswith("data/"):
+        fname = fname[len("data/"):]
+    if fname.startswith("/"):
+        # Absolute path inside the container; only allow under data_dir.
+        candidate = Path(fname)
+    else:
+        candidate = data_dir / fname
+    try:
+        resolved = candidate.resolve()
+        data_resolved = data_dir.resolve()
+    except (OSError, ValueError):
+        # ValueError covers e.g. embedded NUL bytes in the path.
+        return None
+    if data_resolved not in resolved.parents and resolved != data_resolved:
+        logger.warning("Image %r resolves outside data dir, skipping", src)
+        return None
+    if not resolved.is_file():
+        logger.warning("Image %r not found at %s", src, resolved)
+        return None
+    return resolved
+
+
+def _embed_images(html: str, book: epub.EpubBook, embedded: dict[str, str], data_dir: Path) -> str:
+    """Rewrite <img src=...> tags so they reference files embedded in the EPUB.
+
+    For each unique image referenced, the file is read from data_dir and added
+    to the book as an EpubImage under images/. Returns the rewritten HTML.
+    """
+    img_tag = re.compile(r'(<img\b[^>]*?\bsrc\s*=\s*)(["\'])([^"\']+)\2([^>]*?>)', re.IGNORECASE)
+
+    def replace(match: re.Match) -> str:
+        prefix, quote, src, suffix = match.group(1), match.group(2), match.group(3), match.group(4)
+        resolved = _resolve_image(src, data_dir)
+        if resolved is None:
+            return match.group(0)
+        ext = resolved.suffix.lower()
+        if ext not in IMAGE_MEDIA_TYPES:
+            logger.warning("Unsupported image extension %s for %s", ext, resolved)
+            return match.group(0)
+
+        epub_path = embedded.get(str(resolved))
+        if epub_path is None:
+            epub_path = f"images/{resolved.name}"
+            # Ensure unique file_name if two source files share a basename.
+            n = 1
+            while epub_path in embedded.values():
+                epub_path = f"images/{resolved.stem}_{n}{resolved.suffix}"
+                n += 1
+            with open(resolved, "rb") as f:
+                content = f.read()
+            uid = f"img_{len(embedded)}_" + (re.sub(r"\W+", "_", resolved.stem).strip("_") or "x")
+            book.add_item(
+                epub.EpubImage(
+                    uid=uid,
+                    file_name=epub_path,
+                    media_type=IMAGE_MEDIA_TYPES[ext],
+                    content=content,
+                )
+            )
+            embedded[str(resolved)] = epub_path
+        return f'{prefix}{quote}{epub_path}{quote}{suffix}'
+
+    return img_tag.sub(replace, html)
+
+
+def build_epub(
+    pages: list[str],
+    title: str,
+    output_path: str,
+    data_dir: Path | None = None,
+) -> None:
+    """Assemble pages into an EPUB file.
+
+    Image references in the markdown (``![alt](filename.png)``) are resolved
+    against ``data_dir`` and embedded into the EPUB. Defaults to ``DATA_DIR``.
+    """
+    if data_dir is None:
+        data_dir = DATA_DIR
+
     book = epub.EpubBook()
     book.set_identifier("md2epub-" + re.sub(r"\W+", "-", title.lower()))
     book.set_title(title)
@@ -86,9 +190,11 @@ def build_epub(pages: list[str], title: str, output_path: str) -> None:
     )
     book.add_item(style)
 
+    embedded_images: dict[str, str] = {}
     chapters = []
     for i, page_md in enumerate(pages):
         html_body = md_to_html(page_md)
+        html_body = _embed_images(html_body, book, embedded_images, data_dir)
         chapter_title = f"Page {i + 1}"
         heading = re.search(r"^#{1,3}\s+(.+)$", page_md, re.MULTILINE)
         if heading:

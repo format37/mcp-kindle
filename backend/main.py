@@ -65,6 +65,29 @@ def send_to_kindle(markdown_text: str, title: str = "") -> str:
 
     Use {next page} markers in the markdown to split content into separate pages/chapters.
 
+    Images
+    ------
+    The markdown may reference images and they will be embedded into the EPUB.
+    Before calling this tool, write each image to the host-mounted ``data/``
+    folder (mapped to ``/app/data`` inside the container) using this filename
+    convention:
+
+        ``{YYYYMMDD_HHMMSS}_{8hex}.{ext}``
+
+    where ``YYYYMMDD_HHMMSS`` is a UTC timestamp and ``8hex`` is 8 lowercase
+    hex chars (e.g. the first 8 of ``uuid.uuid4().hex``) for uniqueness. The
+    filename is treated as an opaque identifier; the server does not parse
+    or validate it. Example: ``20260512_143022_a1b2c3d4.png``. Supported
+    extensions: png, jpg, jpeg, gif, webp. Reference images from markdown
+    with the bare filename (or a ``data/`` prefix), e.g.::
+
+        ![chart](20260512_143022_a1b2c3d4.png)
+
+    The destination Kindle is black-and-white (grayscale e-ink). When you
+    generate images, render them in grayscale / monochrome and choose colors
+    and contrast that read clearly on a BW e-ink display (avoid pure color
+    coding; rely on shading, hatching, line style, or labels).
+
     Args:
         markdown_text: The markdown content to convert and send.
         title: Optional title for the book. If empty, extracted from the first # heading.
