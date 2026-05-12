@@ -1,6 +1,6 @@
 # mcp-kindle
 
-MCP server that converts markdown to EPUB and sends it to a Kindle device via Gmail SMTP.
+MCP server that converts markdown or HTML to EPUB and sends it to a Kindle device via Gmail SMTP.
 
 ## MCP Tools
 
@@ -15,30 +15,58 @@ Two tools, same Kindle:
 Both accept an optional `title` (extracted from `# heading` / `<title>` /
 first `<h1>` if omitted).
 
-### Images
+### The `data/` folder — how images get in
 
-Both tools embed images via the same shared folder. Image bytes never
-travel inside the MCP call (except the HTML tool's `data:` URI channel).
+Both tools embed images via a single shared host directory. Image bytes
+never travel inside the MCP call (except the HTML tool's optional
+`data:` URI channel — see below). The folder is the only file-channel.
 
-1. Save the image to the absolute host path:
-   `/home/alex/projects/mcp-kindle/data/` (bind-mounted to `/app/data` in
-   the container).
+**Host path (absolute):** `/home/alex/projects/mcp-kindle/data/`
+**Container path:** `/app/data/` (bind-mounted from the host path above
+via the `./data:/app/data` volume in [`docker-compose.yml`](docker-compose.yml))
+
+The host path is **hardcoded in both tool docstrings** so an LLM agent
+knows exactly where to write image files before calling the MCP. If you
+clone this repo to a different location, update the path in both
+`send_to_kindle` and `send_html_to_kindle` docstrings in
+[`backend/main.py`](backend/main.py) (search for
+`/home/alex/projects/mcp-kindle/data/`), then rebuild the container.
+
+**Workflow** for every image:
+
+1. Save the image file to `/home/alex/projects/mcp-kindle/data/`.
 2. Use the filename convention `{YYYYMMDD_HHMMSS}_{8hex}.{ext}` — e.g.
-   `20260512_143022_a1b2c3d4.png`.
-3. Reference by bare filename from the document:
+   `20260512_143022_a1b2c3d4.png`. The filename is opaque to the server;
+   it just needs to be unique to avoid collisions between agent runs.
+3. Reference by **bare filename** from the document body (no path
+   prefix, no absolute path, no URL):
    - Markdown: `![alt](20260512_143022_a1b2c3d4.png)`
    - HTML:     `<img src="20260512_143022_a1b2c3d4.png" alt="alt">`
 
-File-based extensions: png, jpg, jpeg, gif, webp.
+Supported file extensions: `png`, `jpg`, `jpeg`, `gif`, `webp`. File-based
+SVG is **not** supported — for vector graphics, use inline `<svg>` in the
+HTML body (see below). The image resolver is path-traversal-guarded: `../`,
+absolute paths outside the data folder, NUL bytes, `http(s)://` URLs,
+and missing files all silently drop.
 
-Additional channels available **only** through `send_html_to_kindle`:
+#### Additional image channels (only `send_html_to_kindle`)
 
-- Inline `data:` URIs (raster only; SVG data URIs are rejected).
-- Inline `<svg>...</svg>` in the document body — the right way to embed
-  vector diagrams.
+- **Inline `data:` URI** — `<img src="data:image/png;base64,...">`.
+  Supported MIME types: `image/png`, `image/jpeg`, `image/gif`,
+  `image/webp`. `image/svg+xml` data URIs are **rejected** (we don't
+  sanitise SVG bytes).
+- **Inline `<svg>...</svg>`** in the document body — the right way to
+  embed vector diagrams. The SVG is sanitised together with the rest of
+  the HTML.
 
-Kindles are black-and-white e-ink, so render images in grayscale and
-rely on shading, hatching, line style, or labels rather than colour.
+External `http(s)://` image URLs are not fetched; the `src` is stripped
+so renderers that fetch at view time can't leak the reader's IP.
+
+#### Kindle is BW
+
+The destination is a black-and-white e-ink display. Render images in
+grayscale and rely on shading, hatching, line style, or labels rather
+than colour coding.
 
 ## Setup
 
