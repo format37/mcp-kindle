@@ -62,36 +62,71 @@ mcp = FastMCP(
 
 @mcp.tool()
 def send_to_kindle(markdown_text: str, title: str = "") -> str:
-    """Convert markdown text to EPUB and send it to a Kindle device via email.
+    """Convert markdown text to EPUB and email it to the user's Kindle.
 
-    Use {next page} markers in the markdown to split content into separate pages/chapters.
+    This server exposes TWO tools — pick the one that matches your content:
 
-    Images
-    ------
-    The markdown may reference images and they will be embedded into the EPUB.
-    Before calling this tool, write each image to the host-mounted ``data/``
-    folder (mapped to ``/app/data`` inside the container) using this filename
-    convention:
+      * ``send_to_kindle``      (this tool)  — markdown input, prose-style.
+      * ``send_html_to_kindle`` (sibling)    — HTML input. Use it instead
+        whenever you need: tables with rowspan/colspan, <figure>, inline
+        <svg>, definition lists, <sup>/<sub>/<mark>, or any other layout
+        feature markdown can't express. If you find yourself thinking
+        "I'll pass raw HTML through this markdown tool" — STOP and call
+        ``send_html_to_kindle`` instead. Both tools embed images the same way.
 
-        ``{YYYYMMDD_HHMMSS}_{8hex}.{ext}``
+    Pages
+    -----
+    Use ``{next page}`` markers in the markdown to split content into
+    separate pages / chapters.
 
-    where ``YYYYMMDD_HHMMSS`` is a UTC timestamp and ``8hex`` is 8 lowercase
-    hex chars (e.g. the first 8 of ``uuid.uuid4().hex``) for uniqueness. The
-    filename is treated as an opaque identifier; the server does not parse
-    or validate it. Example: ``20260512_143022_a1b2c3d4.png``. Supported
-    extensions: png, jpg, jpeg, gif, webp. Reference images from markdown
-    with the bare filename (or a ``data/`` prefix), e.g.::
+    Embedding images — REQUIRED WORKFLOW
+    ------------------------------------
+    This tool does NOT accept image bytes inside the markdown text. You must
+    write the image file to disk first, then reference it by filename.
 
-        ![chart](20260512_143022_a1b2c3d4.png)
+    Step 1. Save each image file to this EXACT absolute path on the host
+            machine (the same host the agent is running on):
 
-    The destination Kindle is black-and-white (grayscale e-ink). When you
-    generate images, render them in grayscale / monochrome and choose colors
-    and contrast that read clearly on a BW e-ink display (avoid pure color
-    coding; rely on shading, hatching, line style, or labels).
+                /home/alex/projects/mcp-kindle/data/
+
+            (Inside the MCP container this directory is bind-mounted at
+            /app/data — you don't need to use the container path; write to
+            the host path with your normal filesystem tools, e.g. Write or
+            Bash.)
+
+    Step 2. Use this filename convention so files don't collide between
+            agent runs:
+
+                {YYYYMMDD_HHMMSS}_{8hex}.{ext}
+
+            - YYYYMMDD_HHMMSS — UTC timestamp
+            - 8hex            — 8 lowercase hex chars (e.g. the first 8 of
+                                uuid.uuid4().hex)
+            - ext             — one of: png, jpg, jpeg, gif, webp
+                                (SVG is NOT supported here — rasterize to
+                                PNG before saving)
+
+            Example filename: 20260512_143022_a1b2c3d4.png
+
+    Step 3. Reference the image in markdown by the BARE FILENAME (no path
+            prefix, no absolute path, no URL):
+
+                ![alt text](20260512_143022_a1b2c3d4.png)
+
+    External http(s):// URLs and arbitrary file paths are NOT fetched and
+    will silently drop. The file MUST exist in the directory above before
+    you call this tool.
+
+    BW rendering
+    ------------
+    The destination Kindle is black-and-white e-ink. Generate images in
+    grayscale; rely on shading, hatching, line style, or labels rather
+    than colour coding.
 
     Args:
         markdown_text: The markdown content to convert and send.
-        title: Optional title for the book. If empty, extracted from the first # heading.
+        title: Optional book title. If empty, extracted from the first
+            ``# heading`` in the markdown.
     """
     if not SENDER_EMAIL or not GMAIL_APP_PASS or not RECIPIENT_EMAIL:
         return "Error: missing email configuration (SENDER_EMAIL, GMAIL_APP_PASS, or RECIPIENT_EMAIL)"
@@ -109,54 +144,98 @@ def send_to_kindle(markdown_text: str, title: str = "") -> str:
 
 @mcp.tool()
 def send_html_to_kindle(html_text: str, title: str = "") -> str:
-    """Convert an HTML document to EPUB and send it to the Kindle.
+    """Convert an HTML document to EPUB and email it to the user's Kindle.
 
-    HTML is a richer authoring format than markdown: native support for
-    tables with ``rowspan`` / ``colspan`` and ``<caption>``, definition
-    lists (``<dl>``/``<dt>``/``<dd>``), nested ``<blockquote>``,
-    ``<figure>``/``<figcaption>``, inline ``<svg>``, and arbitrary
-    inline markup (``<sup>``, ``<sub>``, ``<mark>``, ``<u>``, ``<s>``).
-    Use this tool when the document is layout-rich; otherwise prefer the
-    markdown tool.
+    This server exposes TWO tools — pick the one that matches your content:
+
+      * ``send_html_to_kindle`` (this tool) — HTML input. Use it whenever
+        the document needs features markdown can't express:
+          - tables with rowspan/colspan/caption/thead/tbody/tfoot
+          - definition lists (<dl>/<dt>/<dd>)
+          - <figure>/<figcaption>
+          - inline <svg> for diagrams (PREFERRED for vector graphics —
+            do NOT pass SVG as a data: URI, that's rejected, see below)
+          - nested <blockquote>, <sup>, <sub>, <mark>, <u>, <s>
+      * ``send_to_kindle`` (sibling) — markdown input, prose-style.
 
     Chapters
     --------
     The body is split into chapters at every ``<h1>`` element. Anything
-    before the first ``<h1>`` becomes a "Preface" chapter.
+    before the first ``<h1>`` becomes a "Preface" chapter. Common semantic
+    wrappers (<section>/<article>/<main>) are flattened first, so nested
+    <h1>s still produce chapter boundaries.
 
-    Images
-    ------
-    Two image sources are accepted (same destination — embedded into the
-    EPUB, no outbound network calls):
+    Embedding images — TWO CHANNELS
+    -------------------------------
+    Pick ONE per image:
 
-    1. ``data:`` URIs (``<img src="data:image/png;base64,...">``) — decoded
-       and embedded inline. Useful for very small or programmatically
-       generated images.
-    2. Files placed in the host-mounted ``data/`` folder (``/app/data``
-       inside the container). Filename convention:
-       ``{YYYYMMDD_HHMMSS}_{8hex}.{ext}`` (UTC timestamp, 8 lowercase hex
-       chars, e.g. ``20260512_143022_a1b2c3d4.png``). Reference from HTML
-       with the bare filename or a ``data/`` prefix:
-       ``<img src="20260512_143022_a1b2c3d4.png">``.
-       Supported extensions: png, jpg, jpeg, gif, webp.
+    CHANNEL A — image file in the shared folder (preferred for reuse /
+    larger images):
 
-    External ``http(s)://`` image URLs are *not* fetched — embed them as a
-    file in ``data/`` first.
+        Step 1. Save the image to this EXACT absolute path on the host
+                machine (the same host the agent is running on):
 
-    The destination Kindle is black-and-white (grayscale e-ink). Render
-    images in grayscale / monochrome and rely on shading, hatching, line
-    style, or labels rather than color coding.
+                    /home/alex/projects/mcp-kindle/data/
 
-    Sanitization
+                (Inside the MCP container this directory is bind-mounted
+                at /app/data — write to the HOST path with your normal
+                filesystem tools, e.g. Write or Bash.)
+
+        Step 2. Filename convention so files don't collide between runs:
+
+                    {YYYYMMDD_HHMMSS}_{8hex}.{ext}
+
+                e.g. 20260512_143022_a1b2c3d4.png
+                ext one of: png, jpg, jpeg, gif, webp
+                (file-based SVG is NOT supported — use Channel C below
+                 for vector graphics)
+
+        Step 3. Reference by BARE FILENAME from HTML:
+
+                    <img src="20260512_143022_a1b2c3d4.png" alt="...">
+
+    CHANNEL B — data: URI inline in the HTML (good for one-shot small
+    raster images):
+
+        <img src="data:image/png;base64,iVBOR..." alt="...">
+
+        Supported MIME types for data: URIs:
+            image/png, image/jpeg, image/gif, image/webp
+        ``image/svg+xml`` data URIs are REJECTED. Use Channel C for
+        vector graphics.
+
+    CHANNEL C — inline <svg> in the document body (the right way to
+    include diagrams / vector graphics):
+
+        <svg xmlns="http://www.w3.org/2000/svg" width="..." height="..."
+             viewBox="...">
+          ...shapes...
+        </svg>
+
+        Inline SVG is sanitised together with the rest of the HTML.
+
+    External http(s):// image URLs are NOT fetched. If an <img> has an
+    external src, the src attribute is stripped (so renderers that fetch
+    at view time can't leak the reader's IP); the alt text still renders.
+    If you have a remote image, download it first and embed via Channel A
+    or B.
+
+    BW rendering
     ------------
-    ``<script>``, ``<iframe>``, ``<embed>``, ``<object>``, ``<form>``,
-    ``<style>``, ``on*`` event-handler attributes and ``javascript:``
-    URLs are stripped before conversion.
+    The destination Kindle is black-and-white e-ink. Generate images in
+    grayscale; rely on shading, hatching, line style, or labels rather
+    than colour coding.
+
+    Sanitisation
+    ------------
+    Removed before conversion: <script>, <iframe>, <embed>, <object>,
+    <form>, <input>, <button>, <style>, <link>, <meta>, <base>,
+    <noscript>; all on* event-handler attributes; ``javascript:`` hrefs.
 
     Args:
         html_text: The HTML body (or full document). Fragments are accepted.
-        title: Optional book title. If empty, taken from ``<title>`` then
-            the first ``<h1>``, falling back to "Untitled".
+        title: Optional book title. If empty, taken from <title>, then the
+            first <h1>, falling back to "Untitled".
     """
     if not SENDER_EMAIL or not GMAIL_APP_PASS or not RECIPIENT_EMAIL:
         return "Error: missing email configuration (SENDER_EMAIL, GMAIL_APP_PASS, or RECIPIENT_EMAIL)"

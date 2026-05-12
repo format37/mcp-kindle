@@ -2,25 +2,43 @@
 
 MCP server that converts markdown to EPUB and sends it to a Kindle device via Gmail SMTP.
 
-## MCP Tool
+## MCP Tools
 
-**`send_to_kindle`** — Takes markdown text, converts it to EPUB, and emails it to your Kindle.
+Two tools, same Kindle:
 
-Parameters:
-- `markdown_text` (required): Markdown content. Use `{next page}` markers to split into chapters.
-- `title` (optional): Book title. If omitted, extracted from the first `# heading`.
+- **`send_to_kindle`** — markdown → EPUB → email. Use for prose-style content.
+- **`send_html_to_kindle`** — HTML → EPUB → email. Use when you need
+  tables with `rowspan`/`colspan`, `<dl>`, `<figure>`, inline `<svg>`,
+  `<sup>`/`<sub>`/`<mark>`, or any other layout feature markdown can't
+  express.
+
+Both accept an optional `title` (extracted from `# heading` / `<title>` /
+first `<h1>` if omitted).
 
 ### Images
 
-The markdown may reference images, which are embedded into the EPUB.
+Both tools embed images via the same shared folder. Image bytes never
+travel inside the MCP call (except the HTML tool's `data:` URI channel).
 
-1. Drop the image into the host `data/` directory (mounted to `/app/data` in the container).
-2. Use the filename convention `{YYYYMMDD_HHMMSS}_{8-char-uuid}.{ext}` — e.g. `20260512_143022_a1b2c3d4.png`.
-3. Reference it from markdown with the bare filename (or `data/` prefix): `![alt](20260512_143022_a1b2c3d4.png)`.
+1. Save the image to the absolute host path:
+   `/home/alex/projects/mcp-kindle/data/` (bind-mounted to `/app/data` in
+   the container).
+2. Use the filename convention `{YYYYMMDD_HHMMSS}_{8hex}.{ext}` — e.g.
+   `20260512_143022_a1b2c3d4.png`.
+3. Reference by bare filename from the document:
+   - Markdown: `![alt](20260512_143022_a1b2c3d4.png)`
+   - HTML:     `<img src="20260512_143022_a1b2c3d4.png" alt="alt">`
 
-Supported extensions: png, jpg, jpeg, gif, webp.
+File-based extensions: png, jpg, jpeg, gif, webp.
 
-Kindles are black-and-white e-ink displays, so render images in grayscale/monochrome and rely on shading or labels rather than color.
+Additional channels available **only** through `send_html_to_kindle`:
+
+- Inline `data:` URIs (raster only; SVG data URIs are rejected).
+- Inline `<svg>...</svg>` in the document body — the right way to embed
+  vector diagrams.
+
+Kindles are black-and-white e-ink, so render images in grayscale and
+rely on shading, hatching, line style, or labels rather than colour.
 
 ## Setup
 
