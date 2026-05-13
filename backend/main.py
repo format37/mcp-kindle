@@ -60,86 +60,87 @@ mcp = FastMCP(
 )
 
 
-@mcp.tool()
-def send_to_kindle(markdown_text: str, title: str = "") -> str:
-    """Convert markdown text to EPUB and email it to the user's Kindle.
-
-    This server exposes TWO tools — pick the one that matches your content:
-
-      * ``send_to_kindle``      (this tool)  — markdown input, prose-style.
-      * ``send_html_to_kindle`` (sibling)    — HTML input. Use it instead
-        whenever you need: tables with rowspan/colspan, <figure>, inline
-        <svg>, definition lists, <sup>/<sub>/<mark>, or any other layout
-        feature markdown can't express. If you find yourself thinking
-        "I'll pass raw HTML through this markdown tool" — STOP and call
-        ``send_html_to_kindle`` instead. Both tools embed images the same way.
-
-    Pages
-    -----
-    Use ``{next page}`` markers in the markdown to split content into
-    separate pages / chapters.
-
-    Embedding images — REQUIRED WORKFLOW
-    ------------------------------------
-    This tool does NOT accept image bytes inside the markdown text. You must
-    write the image file to disk first, then reference it by filename.
-
-    Step 1. Save each image file to this EXACT absolute path on the host
-            machine (the same host the agent is running on):
-
-                /home/alex/projects/mcp-kindle/data/
-
-            (Inside the MCP container this directory is bind-mounted at
-            /app/data — you don't need to use the container path; write to
-            the host path with your normal filesystem tools, e.g. Write or
-            Bash.)
-
-    Step 2. Use this filename convention so files don't collide between
-            agent runs:
-
-                {YYYYMMDD_HHMMSS}_{8hex}.{ext}
-
-            - YYYYMMDD_HHMMSS — UTC timestamp
-            - 8hex            — 8 lowercase hex chars (e.g. the first 8 of
-                                uuid.uuid4().hex)
-            - ext             — one of: png, jpg, jpeg, gif, webp
-                                (SVG is NOT supported here — rasterize to
-                                PNG before saving)
-
-            Example filename: 20260512_143022_a1b2c3d4.png
-
-    Step 3. Reference the image in markdown by the BARE FILENAME (no path
-            prefix, no absolute path, no URL):
-
-                ![alt text](20260512_143022_a1b2c3d4.png)
-
-    External http(s):// URLs and arbitrary file paths are NOT fetched and
-    will silently drop. The file MUST exist in the directory above before
-    you call this tool.
-
-    BW rendering
-    ------------
-    The destination Kindle is black-and-white e-ink. Generate images in
-    grayscale; rely on shading, hatching, line style, or labels rather
-    than colour coding.
-
-    Args:
-        markdown_text: The markdown content to convert and send.
-        title: Optional book title. If empty, extracted from the first
-            ``# heading`` in the markdown.
-    """
-    if not SENDER_EMAIL or not GMAIL_APP_PASS or not RECIPIENT_EMAIL:
-        return "Error: missing email configuration (SENDER_EMAIL, GMAIL_APP_PASS, or RECIPIENT_EMAIL)"
-    try:
-        return convert_and_send(
-            markdown_text=markdown_text,
-            title=title,
-            sender_email=SENDER_EMAIL,
-            sender_password=GMAIL_APP_PASS,
-            recipient_email=RECIPIENT_EMAIL,
-        )
-    except Exception as e:
-        return f"Error: {e}"
+# Markdown endpoint disabled — use send_html_to_kindle instead.
+# @mcp.tool()
+# def send_to_kindle(markdown_text: str, title: str = "") -> str:
+#     """Convert markdown text to EPUB and email it to the user's Kindle.
+#
+#     This server exposes TWO tools — pick the one that matches your content:
+#
+#       * ``send_to_kindle``      (this tool)  — markdown input, prose-style.
+#       * ``send_html_to_kindle`` (sibling)    — HTML input. Use it instead
+#         whenever you need: tables with rowspan/colspan, <figure>, inline
+#         <svg>, definition lists, <sup>/<sub>/<mark>, or any other layout
+#         feature markdown can't express. If you find yourself thinking
+#         "I'll pass raw HTML through this markdown tool" — STOP and call
+#         ``send_html_to_kindle`` instead. Both tools embed images the same way.
+#
+#     Pages
+#     -----
+#     Use ``{next page}`` markers in the markdown to split content into
+#     separate pages / chapters.
+#
+#     Embedding images — REQUIRED WORKFLOW
+#     ------------------------------------
+#     This tool does NOT accept image bytes inside the markdown text. You must
+#     write the image file to disk first, then reference it by filename.
+#
+#     Step 1. Save each image file to this EXACT absolute path on the host
+#             machine (the same host the agent is running on):
+#
+#                 /home/alex/projects/mcp-kindle/data/
+#
+#             (Inside the MCP container this directory is bind-mounted at
+#             /app/data — you don't need to use the container path; write to
+#             the host path with your normal filesystem tools, e.g. Write or
+#             Bash.)
+#
+#     Step 2. Use this filename convention so files don't collide between
+#             agent runs:
+#
+#                 {YYYYMMDD_HHMMSS}_{8hex}.{ext}
+#
+#             - YYYYMMDD_HHMMSS — UTC timestamp
+#             - 8hex            — 8 lowercase hex chars (e.g. the first 8 of
+#                                 uuid.uuid4().hex)
+#             - ext             — one of: png, jpg, jpeg, gif, webp
+#                                 (SVG is NOT supported here — rasterize to
+#                                 PNG before saving)
+#
+#             Example filename: 20260512_143022_a1b2c3d4.png
+#
+#     Step 3. Reference the image in markdown by the BARE FILENAME (no path
+#             prefix, no absolute path, no URL):
+#
+#                 ![alt text](20260512_143022_a1b2c3d4.png)
+#
+#     External http(s):// URLs and arbitrary file paths are NOT fetched and
+#     will silently drop. The file MUST exist in the directory above before
+#     you call this tool.
+#
+#     BW rendering
+#     ------------
+#     The destination Kindle is black-and-white e-ink. Generate images in
+#     grayscale; rely on shading, hatching, line style, or labels rather
+#     than colour coding.
+#
+#     Args:
+#         markdown_text: The markdown content to convert and send.
+#         title: Optional book title. If empty, extracted from the first
+#             ``# heading`` in the markdown.
+#     """
+#     if not SENDER_EMAIL or not GMAIL_APP_PASS or not RECIPIENT_EMAIL:
+#         return "Error: missing email configuration (SENDER_EMAIL, GMAIL_APP_PASS, or RECIPIENT_EMAIL)"
+#     try:
+#         return convert_and_send(
+#             markdown_text=markdown_text,
+#             title=title,
+#             sender_email=SENDER_EMAIL,
+#             sender_password=GMAIL_APP_PASS,
+#             recipient_email=RECIPIENT_EMAIL,
+#         )
+#     except Exception as e:
+#         return f"Error: {e}"
 
 
 @mcp.tool()
