@@ -58,6 +58,17 @@ and missing files all silently drop.
 - **Inline `<svg>...</svg>`** in the document body — the right way to
   embed vector diagrams. The SVG is sanitised together with the rest of
   the HTML.
+- **Inline PlantUML** — wrap diagram source in
+  `<pre class="plantuml">@startuml ... @enduml</pre>`. The server
+  renders each block to PNG via `plantuml.jar` and substitutes an
+  `<img>` at conversion time, so the agent writes ONE self-contained
+  document. Escape `<` / `>` inside the block as `&lt;` / `&gt;`
+  (PlantUML uses `->`, `<|--`, generics like `Map<K,V>`). All PlantUML
+  diagram families are supported (class, sequence, activity, state,
+  use-case, component, deployment, ER, mindmap, gantt). Render failures
+  raise an error from the tool — fix the source and resend. For
+  sequence diagrams, prefer `note over X : ...` over self-message
+  arrows `X -> X` (self-loops render ambiguously).
 
 External `http(s)://` image URLs are not fetched; the `src` is stripped
 so renderers that fetch at view time can't leak the reader's IP.

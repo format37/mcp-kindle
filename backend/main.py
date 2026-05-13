@@ -221,6 +221,43 @@ def send_html_to_kindle(html_text: str, title: str = "") -> str:
     If you have a remote image, download it first and embed via Channel A
     or B.
 
+    Embedding UML / logical diagrams — PlantUML blocks
+    --------------------------------------------------
+    Put PlantUML source directly in the HTML inside a
+    ``<pre class="plantuml">...</pre>`` element. The server renders each
+    block to PNG (via plantuml.jar) and substitutes an <img> at conversion
+    time, so you write ONE self-contained document — no separate render +
+    upload step.
+
+        <pre class="plantuml">
+        @startuml
+        !theme cerulean-outline
+        skinparam dpi 180
+        class A { +do(): void }
+        class B
+        A --&gt; B : uses
+        @enduml
+        </pre>
+
+    Rules:
+
+      * The PlantUML source is HTML-decoded before rendering, so escape
+        ``<`` / ``>`` as ``&lt;`` / ``&gt;`` (PlantUML uses ``->``, ``-->``,
+        ``<|--``, generics like ``Map<K,V>``, etc.). Other entities pass
+        through normally.
+      * ``@startuml`` / ``@enduml`` are optional — if missing they're
+        wrapped automatically.
+      * For sequence diagrams, prefer ``note over X : ...`` over
+        self-message arrows ``X -> X : ...``. Self-loops render as a
+        small hook in the gap to the right of the lifeline and visually
+        read as an incoming arrow from the next participant.
+      * A render failure (bad syntax, missing dependency) raises an
+        error from this tool — fix the source and resend.
+
+    Supports all PlantUML diagram families: class, sequence, activity,
+    state, use-case, component, deployment, ER, mindmap, gantt, JSON,
+    archimate.
+
     BW rendering
     ------------
     The destination Kindle is black-and-white e-ink. Generate images in

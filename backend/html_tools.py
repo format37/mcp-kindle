@@ -37,6 +37,7 @@ from kindle_tools import (
     _resolve_image,
     send_epub_to_kindle,
 )
+from plantuml_tools import process_plantuml_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -316,6 +317,7 @@ def build_epub_from_html(
     # `lxml` parser tolerates fragments and broken HTML.
     soup = BeautifulSoup(html_text, "lxml")
     _sanitize(soup)
+    process_plantuml_blocks(soup)
 
     resolved_title = title.strip() if title else (_extract_title(soup) or "Untitled")
 
