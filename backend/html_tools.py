@@ -84,6 +84,11 @@ def _escape(s: str) -> str:
 def _sanitize(soup: BeautifulSoup) -> None:
     """Drop dangerous tags and event-handler attributes (in-place)."""
     for tag in soup.find_all(list(STRIP_TAGS)):
+        # Keep <style> when it lives inside an <svg>: it's scoped to the
+        # SVG, can't run JS, and SVG diagrams routinely use class-based
+        # styling (without it, class-styled shapes default to black fill).
+        if tag.name == "style" and tag.find_parent("svg") is not None:
+            continue
         tag.decompose()
     for tag in soup.find_all(True):
         for attr in list(tag.attrs):
