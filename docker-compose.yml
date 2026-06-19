@@ -1,3 +1,11 @@
+# kindle MCP — local only. Runs on 127.0.0.1:8018, no Caddy, no public token
+# (MCP_TOKENS is empty => token auth disabled). Java + Graphviz + plantuml.jar
+# are frozen in the image, so the host needs nothing but Docker.
+#
+# Run:  ./compose.sh   (or: docker compose up -d --build)
+#
+# Claude writes image files into ./data (bind-mounted at /app/data) and the MCP
+# embeds them into the EPUB. SMTP creds come from .env.
 services:
   mcp-kindle:
     build:
@@ -8,15 +16,10 @@ services:
       - PORT=8018
       - TZ=UTC
       - MCP_NAME=kindle
+      - MCP_TOKENS=          # empty => token auth disabled (localhost only)
     ports:
-      - "8018:8018"
+      - "127.0.0.1:8018:8018"
     volumes:
       - ./.env:/app/.env:ro
       - ./data:/app/data
-    networks:
-      - default
-      - mcp-shared
-
-networks:
-  mcp-shared:
-    external: true
+    restart: unless-stopped

@@ -39,16 +39,12 @@ transport_security = TransportSecuritySettings(
         "localhost:*",
         "127.0.0.1:*",
         "mcp-kindle:*",
-        "scriptlab.duckdns.org:*",
-        "scriptlab.duckdns.org",
     ],
     allowed_origins=[
         "http://localhost:*",
         "https://localhost:*",
         "http://127.0.0.1:*",
         "http://mcp-kindle:*",
-        "https://scriptlab.duckdns.org:*",
-        "https://scriptlab.duckdns.org",
     ],
 )
 
