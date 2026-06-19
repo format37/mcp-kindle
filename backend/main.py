@@ -140,7 +140,7 @@ mcp = FastMCP(
 
 
 @mcp.tool()
-def send_html_to_kindle(html_text: str, title: str = "") -> str:
+def send_html_to_kindle(html_text: str, title: str = "", cover: str = "") -> str:
     """Convert an HTML document to EPUB and email it to the user's Kindle.
 
     This server exposes TWO tools — pick the one that matches your content:
@@ -266,10 +266,19 @@ def send_html_to_kindle(html_text: str, title: str = "") -> str:
     <form>, <input>, <button>, <style>, <link>, <meta>, <base>,
     <noscript>; all on* event-handler attributes; ``javascript:`` hrefs.
 
+    Book cover
+    ----------
+    Pass ``cover`` = the BARE FILENAME of a cover image already saved in the
+    shared data folder (same place and rules as Channel A images). It is set as
+    the real EPUB cover: the Kindle library thumbnail and the opening page.
+    Always supply a grayscale cover for every book (see the kindle skill).
+
     Args:
         html_text: The HTML body (or full document). Fragments are accepted.
         title: Optional book title. If empty, taken from <title>, then the
             first <h1>, falling back to "Untitled".
+        cover: Bare filename of the cover image in the data folder (e.g.
+            ``cover_xxx.jpg``). Optional but expected for every book.
     """
     if not SENDER_EMAIL or not GMAIL_APP_PASS or not RECIPIENT_EMAIL:
         return "Error: missing email configuration (SENDER_EMAIL, GMAIL_APP_PASS, or RECIPIENT_EMAIL)"
@@ -280,6 +289,7 @@ def send_html_to_kindle(html_text: str, title: str = "") -> str:
             sender_email=SENDER_EMAIL,
             sender_password=GMAIL_APP_PASS,
             recipient_email=RECIPIENT_EMAIL,
+            cover=cover,
         )
     except Exception as e:
         return f"Error: {e}"

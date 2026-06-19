@@ -311,6 +311,7 @@ def build_epub_from_html(
     title: str,
     output_path: str,
     data_dir: Path | None = None,
+    cover: str | None = None,
 ) -> str:
     """Parse HTML, sanitise it, embed images, and write an EPUB.
 
@@ -344,6 +345,22 @@ def build_epub_from_html(
 
     _embed_images(soup, book, data_dir)
 
+    # Book cover (shows as the Kindle library thumbnail + first page). The cover
+    # is a bare filename in the data dir, resolved the same path-traversal-safe
+    # way as inline images. Missing/unsupported cover degrades gracefully.
+    cover_added = False
+    if cover and cover.strip():
+        resolved_cover = _resolve_image(cover.strip(), data_dir)
+        if resolved_cover is not None and resolved_cover.suffix.lower() in IMAGE_MEDIA_TYPES:
+            ext = resolved_cover.suffix.lower()
+            book.set_cover("cover" + ext, resolved_cover.read_bytes())
+            for it in book.get_items():
+                if getattr(it, "id", None) == "cover-img":
+                    it.media_type = IMAGE_MEDIA_TYPES[ext]
+            cover_added = True
+        else:
+            logger.warning("Cover not found/unsupported; sending without it: %s", cover)
+
     chapters = []
     for i, (chap_title, nodes) in enumerate(_split_chapters(body)):
         ch = epub.EpubHtml(
@@ -360,7 +377,7 @@ def build_epub_from_html(
         chapters.append(ch)
 
     book.toc = chapters
-    book.spine = ["nav"] + chapters
+    book.spine = (["cover"] if cover_added else []) + ["nav"] + chapters
     book.add_item(epub.EpubNcx())
     book.add_item(epub.EpubNav())
 
@@ -374,6 +391,7 @@ def convert_html_and_send(
     sender_email: str,
     sender_password: str,
     recipient_email: str,
+    cover: str | None = None,
 ) -> str:
     """Full pipeline: HTML -> EPUB -> email to Kindle."""
     if not html_text or not html_text.strip():
@@ -385,7 +403,7 @@ def convert_html_and_send(
     tmp.close()
 
     try:
-        resolved_title = build_epub_from_html(html_text, title, epub_path)
+        resolved_title = build_epub_from_html(html_text, title, epub_path, cover=cover)
         send_epub_to_kindle(
             epub_path,
             sender_email,
