@@ -220,13 +220,17 @@ def build_epub(
 
 
 def _make_attachment_filename(title: str) -> str:
-    """Build a unique attachment filename with datetime prefix."""
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    """Build the EPUB attachment filename: YYMMDD-HHMM-<name>.epub.
+
+    The YYMMDD-HHMM datetime prefix is generated server-side (UTC), so callers
+    must NOT add their own — just pass a short title as the <name>.
+    """
+    ts = datetime.now(timezone.utc).strftime("%y%m%d-%H%M")
     safe = re.sub(r"[^\w\s-]", "", title).strip()
-    safe = re.sub(r"\s+", "_", safe)[:80]
+    safe = re.sub(r"[\s_]+", "-", safe)[:80].strip("-")
     if not safe:
         safe = "book"
-    return f"{ts}_{safe}.epub"
+    return f"{ts}-{safe}.epub"
 
 
 def send_epub_to_kindle(
