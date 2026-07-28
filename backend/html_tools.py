@@ -37,7 +37,8 @@ from kindle_tools import (
     _resolve_image,
     send_epub_to_kindle,
 )
-from plantuml_tools import process_plantuml_blocks
+from diagrams import process_diagram_blocks
+from mathrender import process_math_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,10 @@ blockquote { border-left: 3px solid #888; margin: 0.6em 0 0.6em 0.5em;
 caption { caption-side: top; font-style: italic; padding-bottom: 0.3em; }
 figure { margin: 0.8em 0; text-align: center; }
 figcaption { font-style: italic; font-size: 0.9em; color: #444; }
-img { max-width: 100%; height: auto; }
+/* max-height keeps a tall diagram inside one screen on readers that honour vh
+   (modern Kindle KFX does); readers that ignore it fall back to the width cap,
+   which is the old behaviour, so this can only help. */
+img { max-width: 100%; max-height: 95vh; height: auto; }
 hr { border: 0; border-top: 1px solid #888; margin: 1em 0; }
 dl { margin: 0.5em 0; }
 dt { font-weight: bold; margin-top: 0.4em; }
@@ -150,10 +154,32 @@ def _decode_data_uri(src: str) -> tuple[bytes, str] | None:
     return content, mime
 
 
-def _embed_images(soup: BeautifulSoup, book: epub.EpubBook, data_dir: Path) -> None:
+def _resolve_image_multi(src: str, data_dirs: list[Path]) -> Path | None:
+    """Resolve a bare filename against several roots, first hit wins.
+
+    Book-scoped assets shadow the legacy flat ``data/`` folder, so a book can
+    carry its own ``cover.jpg`` without colliding with anyone else's.
+    """
+    for d in data_dirs:
+        hit = _resolve_image(src, d)
+        if hit is not None:
+            return hit
+    return None
+
+
+def _png_data_uri(png: bytes, *_ignored) -> str:
+    """Sink for the diagram/math renderers: hand back an inline data: URI.
+
+    ``_embed_images`` runs afterwards and turns every data: URI into a real
+    EPUB image item, so rendered blocks need no temp files and no naming.
+    """
+    return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+
+
+def _embed_images(soup: BeautifulSoup, book: epub.EpubBook, data_dirs: list[Path]) -> None:
     """Rewrite <img> tags so they point at embedded EPUB resources.
 
-    Local filenames are resolved under ``data_dir`` (path-traversal-safe).
+    Local filenames are resolved under ``data_dirs`` (path-traversal-safe).
     ``data:`` URIs are decoded and embedded as standalone image items.
     External URLs are left untouched (so they remain broken in the EPUB —
     intentional: no outbound network calls).
@@ -215,7 +241,7 @@ def _embed_images(soup: BeautifulSoup, book: epub.EpubBook, data_dir: Path) -> N
             del img["src"]
             continue
 
-        resolved = _resolve_image(src, data_dir)
+        resolved = _resolve_image_multi(src, data_dirs)
         if resolved is None:
             continue
         key = str(resolved)
@@ -312,18 +338,24 @@ def build_epub_from_html(
     output_path: str,
     data_dir: Path | None = None,
     cover: str | None = None,
+    data_dirs: list[Path] | None = None,
 ) -> str:
-    """Parse HTML, sanitise it, embed images, and write an EPUB.
+    """Parse HTML, sanitise it, render diagrams + math, embed images, write EPUB.
 
-    Returns the resolved book title (useful when it's auto-extracted).
+    ``data_dirs`` lists the roots a bare ``<img src="name.png">`` is resolved
+    against, in order; ``data_dir`` remains as the single-root shorthand the
+    local flow uses. Returns the resolved book title (useful when auto-extracted).
     """
-    if data_dir is None:
-        data_dir = DATA_DIR
+    if data_dirs is None:
+        data_dirs = [data_dir if data_dir is not None else DATA_DIR]
 
     # `lxml` parser tolerates fragments and broken HTML.
     soup = BeautifulSoup(html_text, "lxml")
     _sanitize(soup)
-    process_plantuml_blocks(soup)
+    # Diagrams and equations become PNGs before image embedding, so the author
+    # ships one self-contained document instead of pre-rendering anything.
+    process_diagram_blocks(soup, _png_data_uri)
+    process_math_blocks(soup, _png_data_uri)
 
     resolved_title = title.strip() if title else (_extract_title(soup) or "Untitled")
 
@@ -343,14 +375,14 @@ def build_epub_from_html(
     )
     book.add_item(css)
 
-    _embed_images(soup, book, data_dir)
+    _embed_images(soup, book, data_dirs)
 
     # Book cover (shows as the Kindle library thumbnail + first page). The cover
     # is a bare filename in the data dir, resolved the same path-traversal-safe
     # way as inline images. Missing/unsupported cover degrades gracefully.
     cover_added = False
     if cover and cover.strip():
-        resolved_cover = _resolve_image(cover.strip(), data_dir)
+        resolved_cover = _resolve_image_multi(cover.strip(), data_dirs)
         if resolved_cover is not None and resolved_cover.suffix.lower() in IMAGE_MEDIA_TYPES:
             ext = resolved_cover.suffix.lower()
             book.set_cover("cover" + ext, resolved_cover.read_bytes())
@@ -392,6 +424,7 @@ def convert_html_and_send(
     sender_password: str,
     recipient_email: str,
     cover: str | None = None,
+    data_dirs: list[Path] | None = None,
 ) -> str:
     """Full pipeline: HTML -> EPUB -> email to Kindle."""
     if not html_text or not html_text.strip():
@@ -403,7 +436,9 @@ def convert_html_and_send(
     tmp.close()
 
     try:
-        resolved_title = build_epub_from_html(html_text, title, epub_path, cover=cover)
+        resolved_title = build_epub_from_html(
+            html_text, title, epub_path, cover=cover, data_dirs=data_dirs
+        )
         send_epub_to_kindle(
             epub_path,
             sender_email,

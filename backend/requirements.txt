@@ -2,12 +2,24 @@
 fastmcp>=0.6.0
 uvicorn>=0.32.1
 starlette>=0.41.3
+anyio
 
 # EPUB generation
 EbookLib>=0.18
 Markdown>=3.4
 beautifulsoup4>=4.12
 lxml>=5.0
+
+# Illustration generation (Gemini) + image handling / remote fetch
+google-genai==2.8.0
+pillow>=11.0.0
+requests>=2.32.0
+
+# Book preview: HTML -> PDF (WeasyPrint) -> PNG (pdftoppm, from poppler-utils)
+weasyprint>=63
+
+# Math rendering (matplotlib mathtext -> PNG)
+matplotlib>=3.9
 
 # Environment
 python-dotenv>=1.0.0

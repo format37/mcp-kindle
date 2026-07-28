@@ -1,0 +1,75 @@
+# kindle MCP — VPS deployment (OVH, https://mcp.latentstate.dev/kindle/).
+#
+# Driven from claude.ai web: there is no local filesystem on that side, so every
+# byte-producing step happens in this container and content is addressed by id.
+#
+# Caddy terminates TLS and reverse-proxies to this container over the external
+# `mcp-shared` network, so NO host port is published — `expose` only. Auth is
+# mandatory here (MCP_REQUIRE_AUTH=true + MCP_TOKENS from .env); URL tokens are
+# allowed because the claude.ai connector can only carry the token in the URL.
+#
+# Deploy:
+#   docker network create mcp-shared          # once, shared with the other MCPs
+#   docker compose -f docker-compose.vps.yml up -d --build
+#
+# .env lives on the VPS only (SENDER_EMAIL, GMAIL_APP_PASS, RECIPIENT_EMAIL,
+# GEMINI_API_KEY, MCP_TOKENS) and is gitignored — see .env.example.
+services:
+  mcp-kindle:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mcp-kindle
+    env_file: .env
+    environment:
+      - PORT=8018
+      - TZ=UTC
+      - MCP_NAME=kindle
+      - DATA_DIR=/app/data
+      - MCP_REQUIRE_AUTH=true
+      - MCP_ALLOW_URL_TOKENS=true
+      - MCP_ALLOWED_HOSTS=scriptlab.duckdns.org,mcp.latentstate.dev
+      - MCP_PUBLIC_BASE_URL=https://mcp.latentstate.dev
+      - MERMAID_URL=http://kroki-mermaid:8002
+      - IMAGE_MAX_CONCURRENCY=3
+      - JOB_MAX_WORKERS=4
+      - MCP_SOFT_TIMEOUT_S=90
+      - PREVIEW_MAX_PAGES=20
+      - BOOK_MAX_AGE_DAYS=30
+      - GEMINI_IMAGE_MODEL=gemini-3-pro-image-preview
+    expose:
+      - "8018"
+    volumes:
+      - ./data:/app/data
+    networks:
+      - default
+      - mcp-shared
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+  # Mermaid rendering. No profile here — the web flow can't pre-render diagrams
+  # locally, so Mermaid must always be available. Only kroki's mermaid
+  # COMPANION runs: it takes the diagram source as a raw POST body at /png, so
+  # the full kroki gateway (2.78 GB image, plus a JVM) buys nothing. Measured
+  # at 333 MB RSS idle. It stays off `mcp-shared` — only the app needs to be
+  # reachable by Caddy.
+  kroki-mermaid:
+    image: yuzutech/kroki-mermaid:0.31.2
+    container_name: mcp-kindle-kroki-mermaid
+    expose:
+      - "8002"
+    mem_limit: 700m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
+
+networks:
+  mcp-shared:
+    external: true

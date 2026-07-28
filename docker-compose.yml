@@ -1,11 +1,28 @@
-# kindle MCP — local only. Runs on 127.0.0.1:8018, no Caddy, no public token
-# (MCP_TOKENS is empty => token auth disabled). Java + Graphviz + plantuml.jar
+# kindle MCP — LOCAL deployment (dev machine).
+#
+# One codebase, two deployments:
+#   * this file        — 127.0.0.1:8018, MCP_TOKENS empty => token auth DISABLED.
+#                        Driven by the Claude Code "kindle" skill, which can also
+#                        drop image files straight into ./data and reference them
+#                        by bare filename.
+#   * docker-compose.vps.yml — mcp.latentstate.dev behind Caddy, token auth
+#                        REQUIRED, driven by claude.ai web (no local filesystem).
+#
+# Java + Graphviz + plantuml.jar + d2 + poppler + WeasyPrint's font/pango stack
 # are frozen in the image, so the host needs nothing but Docker.
 #
-# Run:  ./compose.sh   (or: docker compose up -d --build)
+# Run:  ./compose.sh                       (or: docker compose up -d --build)
+# With Mermaid support (one extra container, ~330 MB RSS):
+#       docker compose --profile mermaid up -d --build
+#       ...and uncomment MERMAID_URL below, so /health only claims mermaid
+#       when the sidecar is actually running.
 #
-# Claude writes image files into ./data (bind-mounted at /app/data) and the MCP
-# embeds them into the EPUB. SMTP creds come from .env.
+# SMTP + Gemini creds come from .env (mounted read-only; never committed —
+# see .env.example). The sidecar shares the compose project's default network,
+# so http://kroki-mermaid:8002 resolves from the app container.
+#
+# PlantUML, Graphviz and D2 render locally inside the app image — Mermaid is
+# the only engine that needs the sidecar.
 services:
   mcp-kindle:
     build:
@@ -17,9 +34,33 @@ services:
       - TZ=UTC
       - MCP_NAME=kindle
       - MCP_TOKENS=          # empty => token auth disabled (localhost only)
+      - DATA_DIR=/app/data
+      - MCP_PUBLIC_BASE_URL=  # empty locally: no public HTTPS origin to hand out
+      # Empty unless the sidecar is actually running — otherwise /health would
+      # report mermaid as an available engine for a container that isn't there.
+      # `./compose.sh --mermaid` sets both this and the compose profile.
+      - MERMAID_URL=${MERMAID_URL:-}
+      - IMAGE_MAX_CONCURRENCY=3
+      - JOB_MAX_WORKERS=4
+      - MCP_SOFT_TIMEOUT_S=90
+      - PREVIEW_MAX_PAGES=20
+      - BOOK_MAX_AGE_DAYS=30
+      - GEMINI_IMAGE_MODEL=gemini-3-pro-image-preview
     ports:
       - "127.0.0.1:8018:8018"
     volumes:
       - ./.env:/app/.env:ro
       - ./data:/app/data
+    restart: unless-stopped
+
+  # Mermaid rendering. Only kroki's mermaid COMPANION runs — it accepts the
+  # diagram source as a raw POST body at /png directly, so the full kroki
+  # gateway (a 2.78 GB JVM image, vs 1.09 GB here) is not needed. Behind the
+  # "mermaid" profile so a plain `docker compose up` doesn't pay for the
+  # headless Chrome it drives.
+  kroki-mermaid:
+    image: yuzutech/kroki-mermaid:0.31.2
+    profiles: ["mermaid"]
+    expose:
+      - "8002"
     restart: unless-stopped
