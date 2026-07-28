@@ -329,12 +329,27 @@ Inside your site block:
 handle /kindle* {
     reverse_proxy mcp-kindle:8018
 }
+
+# Everything else on this host must 404. Caddy's default for a path that
+# matches no handler in a site block is an EMPTY 200 — and a claude.ai custom
+# connector reads a 200 on /.well-known/oauth-protected-resource as "this
+# server has a sign-in service", POSTs a client registration to /register,
+# gets an empty body where a JSON client record belongs, and fails with
+# "Couldn't register with kindle's sign-in service". A 404 tells it there is
+# no OAuth here, so it uses the token already in the connector URL.
+handle {
+    respond "Not Found" 404
+}
 ```
 
 `handle`, not `handle_path` — the app serves from `/kindle` and expects the
 prefix. The upstream `Host` header must appear in `MCP_ALLOWED_HOSTS` or the
 MCP's DNS-rebinding protection answers **421 Invalid Host header**; adding the
 hostname to that env var is the fix, not a Caddy header rewrite.
+
+If the site block already serves other apps, scope the fallback rather than
+adding a bare `handle` — a catch-all 404 changes what every unmatched path on
+that hostname returns.
 
 ### claude.ai connector
 
@@ -397,6 +412,7 @@ environment; the ones worth tuning are annotated in `.env.example`.
 | Code change has no effect; an old tool signature is still advertised | Stale container — the source is **baked into the image**, not bind-mounted | `docker compose up -d --build` (a plain `restart` reuses the old image) |
 | `421 Invalid Host header` on every MCP call, while `/health` stays green | The proxy's upstream `Host` is not in the allowlist; `/health` bypasses the check, so it is not proof | Add the hostname to `MCP_ALLOWED_HOSTS` and recreate the container. Verify with a real `initialize` POST, not `/health` |
 | `401 Unauthorized` from claude.ai | Token missing or `MCP_ALLOW_URL_TOKENS=false` | Use `https://<host>/kindle/<TOKEN>/` with the trailing slash; confirm the token is listed in `MCP_TOKENS` |
+| claude.ai: "Couldn't register with `<name>`'s sign-in service… add an OAuth Client ID" | Nothing to do with your token. The **host** answers `200` (empty) instead of `404` on `/.well-known/oauth-protected-resource` and `/register`, so the connector believes OAuth exists here and its client registration fails. Caddy returns an empty 200 for any path matching no handler in a site block | Make unmatched paths 404 (see the Caddy block above), reload, and confirm: `curl -o /dev/null -w '%{http_code}' https://<host>/.well-known/oauth-protected-resource` must print `404`. The 404 must not carry a `WWW-Authenticate` header, or discovery restarts |
 | "mermaid needs its sidecar; neither MERMAID_URL nor KROKI_URL is set" | Sidecar not running, or MERMAID_URL is empty | Locally: `./compose.sh --mermaid` (it sets the compose profile and `MERMAID_URL` together). Or use `plantuml` / `d2` / `graphviz`, which render in-image |
 | "PlantUML render failed (exit N)" / "Mermaid render failed (HTTP 400)" | Diagram syntax error — the message carries the renderer's own stderr | Fix the source. If arrows vanished or the parse error looks nonsensical, you forgot to escape `<`/`>` as `&lt;`/`&gt;` |
 | "LaTeX rejected by mathtext" | An unsupported construct (`\displaystyle`, `\begin{align}`, `\\`) | Rewrite with the mathtext subset; one equation per math element |
