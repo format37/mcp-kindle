@@ -244,13 +244,17 @@ the outbound attachment at 25 MB and base64 adds ~33%.
 A private console at `/kindle/console`: the same server, driven by hand instead
 of by an agent. It is server-rendered HTML out of the process that owns the
 books — no build step, no second container, no JSON API in between, so it cannot
-drift out of sync with the data because it *is* the data. JavaScript is three
-small things (the theme toggle, the select-all niceties, a copy-filename
-helper), all progressive enhancement; every page works with JS off.
+drift out of sync with the data because it *is* the data. JavaScript is four
+small things (the theme toggle, the select-all niceties, a copy-filename helper
+and one delegated confirm), all progressive enhancement; every page works with
+JS off.
 
 **The index** lists every workspace on one page — no pagination — with
 checkboxes, select-all and bulk delete, and a strip for what is on disk and
-whether delivery is configured.
+whether delivery is configured. Each book carries the one label that matters:
+`PREVIEWED`, `PREVIEW STALE`, `SENT` or `SENT, THEN EDITED`. A stale preview is
+exactly the thing you would trust and should not, so it never gets to say
+`PREVIEWED`.
 
 **A book page** is the whole workspace in one screen:
 
@@ -259,15 +263,24 @@ whether delivery is configured.
 | **Build preview** | The real EPUB build, linted, rasterised, shown as a strip of page proofs you can click through. Same pipeline as `preview_book`, so it catches the same things. |
 | **Send to Kindle** | Builds and mails it, then records the outcome *on the book* — where `book_status` shows it to the agent too, so neither of you sends it twice believing it was the first time. |
 | **Document** | The stored HTML in a textarea, with the title, the cover picker and the notes. Saving is `set_document`; the cover you pick here is also what a later `send_book()` uses with no argument. |
+| **Freshness** | A preview goes stale three ways, and all three are checked: the text changed, an image the build pulls in changed, or the cover did. Swap a cover and the page proofs on screen become pictures of a book that no longer exists — under a lint report still saying "clean" — so the page says so instead. |
 | **Assets** | Every image with its dimensions, size, cover mark, and **how many times the document references it** — `UNUSED` is the one that is safe to delete. Uploads are normalised for e-ink exactly like a generated illustration. |
 | **Downloads** | `book.epub`, `preview.pdf`, `doc.html`. |
 
 Long work goes through the same job runner the MCP tools use: the POST returns
-at once, the page follows the build with a meta refresh, and a second click
-joins the running job rather than starting a rival one over the same files. The
-console builds into `out/console/`, deliberately separate from the directory
-`preview_book` writes to, so an agent's preview and yours can never show each
-other's pages.
+at once and the page follows the build with a meta refresh. **One job per book
+at a time** — a second click, a second tab or a send fired during a build all
+join the running job instead of starting a rival one. The console builds into
+`out/console/`, deliberately separate from the directory `preview_book` writes
+to, so an agent's preview and yours can never show each other's pages, and a
+send builds its own `send.epub` so a preview cannot rewrite the file underneath
+it mid-upload.
+
+Saving the document takes an **optimistic lock** on its hash. The other driver
+of this server is an agent running `patch_document` in a loop; without it, a tab
+left open and then a one-word title edit would post its stale textarea over
+everything the agent had written since — silently, with no copy of the lost
+text. The save is refused instead, and says to reload.
 
 **The library page** browses the flat `data/` folder — the images
 `send_html_to_kindle` resolves a bare `<img src="cover.jpg">` against, and what
@@ -281,7 +294,10 @@ and `GEMINI_API_KEY`, so changing a Kindle address or rotating a key is not a
 container restart. Values live in `data/settings.json` (chmod 600, created 0600
 rather than chmod'ed afterwards) and a stored value wins over the environment
 until the field is cleared again — the page says which source each live value
-came from, so it can never be a mystery. Secret inputs render **empty**, never
+came from, so it can never be a mystery. Pressing SAVE without changing anything
+stores **nothing**: writing back a value identical to the environment's would
+pin `.env`'s own value above `.env`, and your next edit there would silently
+stop taking effect. Secret inputs render **empty**, never
 pre-filled with their own mask: blank means "unchanged", and dropping one takes
 a deliberate *clear it* checkbox. A new Gemini key takes effect immediately —
 the cached client is dropped on save.
@@ -307,6 +323,30 @@ token, matches a route segment, or is shorter than 16 characters.
 ```bash
 openssl rand -hex 24        # then: CONSOLE_TOKEN=... in .env
 ```
+
+Two more gates sit in front of every console route, because the token alone is
+not enough:
+
+- **Cross-site POSTs are refused** (`403`) on `Sec-Fetch-Site` / `Origin`. The
+  forms are cookie-less, which sounds like it rules CSRF out and does not: with
+  no token the local URL is guessable, and an HTML form POST is CORS-safelisted
+  — no preflight, sent whatever the origin. Any page you happened to visit could
+  otherwise have repointed your Send-to-Kindle address at itself, on a console
+  it could not even read. Requests with neither header (curl, a script) pass;
+  they are not the confused deputy.
+- **The `Host` header is checked** (`421` otherwise) against `MCP_ALLOWED_HOSTS`
+  plus the usual localhost names. The MCP transport has its own DNS-rebinding
+  protection inside the `mcp` library, but console routes are plain Starlette
+  routes registered ahead of that mount and never reach it — without this, a
+  page on any domain could point DNS at `127.0.0.1` and read your book list,
+  any `doc.html`, and the settings page as same-origin.
+
+Delete confirmations are `data-confirm` attributes read by one delegated
+listener, never `onsubmit=""`. A browser decodes character references *before*
+compiling an inline handler, so a filename holding an apostrophe (say
+`alice's-cover.png`, dropped into `data/` by hand) would break the handler and
+delete on the first click with no confirmation — and a hostile one would execute
+in the console's own origin, where the URL is the credential.
 
 ---
 
@@ -512,6 +552,9 @@ environment; the ones worth tuning are annotated in `.env.example`.
 | Preview unavailable but sending works | WeasyPrint or poppler-utils missing/broken in the image | `/health` reports `preview: false`; the tool's own error names the missing piece (libpango/libcairo, a font family, `pdftoppm`). Rebuild the image |
 | Container exits at once: "CONSOLE_TOKEN is empty on a publicly reachable deployment" | Working as intended — the console can send books and edit credentials, so it must not sit at a guessable path once `MCP_REQUIRE_AUTH` or `MCP_PUBLIC_BASE_URL` is set | `openssl rand -hex 24` into `CONSOLE_TOKEN` in `.env`, then recreate |
 | Console renders unstyled; the CSS 404s | Route order — the static route must precede `/{book_id}`, and Caddy must pass `/kindle/*` through | Check `curl -o /dev/null -w '%{http_code}' <console>/assets/console.css` |
+| Console answers `421 Invalid Host header` | You are reaching it on a hostname it does not answer to — the console checks `Host` itself, since it never passes through the MCP transport's own DNS-rebinding protection | Add the hostname to `MCP_ALLOWED_HOSTS` and recreate the container |
+| A console form POST answers `403 Cross-site request refused` | The request did not come from the console itself — a bookmarklet, a devtools `fetch` from another tab, or a proxy stripping `Sec-Fetch-Site` | Submit from the console's own page. A client that sends neither `Sec-Fetch-Site` nor `Origin` (curl, scripts) is allowed through |
+| SAVE DOCUMENT refuses: "the document changed on the server" | An agent edited the book while the tab was open; the optimistic lock stopped your stale textarea from overwriting it | Reload the page, reapply the edit. Nothing was saved and nothing was lost |
 | Console page proofs look stale after an edit | The preview was not rebuilt; the page says so | The banner reads "the document has changed since this preview was built" — press BUILD PREVIEW. Old page images are deleted on every rebuild, so what you see is never a mix of two builds |
 | Sent it from the console, nothing arrived, no error | Gmail accepted the mail and Amazon dropped it — the sender is not an approved one | Settings -> SAVE & SEND TEST states this explicitly; fix the sender under Amazon's *Personal Document Settings* |
 
@@ -524,10 +567,12 @@ docker compose run --rm --entrypoint sh mcp-kindle \
     -c "pip install -q pytest && python -m pytest tests"
 ```
 
-Inside the image, because that is where every dependency already is. They cover
-the four console failures that are silent in production: a credential overwritten
-by its own mask, a page proof left behind from a previous build, a path escaping
-the data folder, and an upload clobbering the asset the document points at.
+Inside the image, because that is where every dependency already is. 17 tests,
+each one standing on a console failure that is silent in production: a credential
+overwritten by its own mask, a page proof left behind from a previous build, a
+path escaping the data folder, an upload clobbering the asset the document points
+at, a filename compiled as JavaScript, and an editor that forgot which version it
+was rendered from.
 
 ---
 
