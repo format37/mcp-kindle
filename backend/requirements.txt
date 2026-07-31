@@ -3,6 +3,11 @@ fastmcp>=0.6.0
 uvicorn>=0.32.1
 starlette>=0.41.3
 anyio
+# Multipart form parsing for the console's image uploads. Starlette imports it
+# lazily and asserts on it before it even looks at the content type, so without
+# this pin EVERY console POST 500s — and it only arrives here transitively, via
+# mcp, which is not a promise.
+python-multipart>=0.0.18
 
 # EPUB generation
 EbookLib>=0.18

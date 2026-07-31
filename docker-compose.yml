@@ -34,6 +34,10 @@ services:
       - TZ=UTC
       - MCP_NAME=kindle
       - MCP_TOKENS=          # empty => token auth disabled (localhost only)
+      # Console at http://localhost:8018/kindle/console. Unguarded here for the
+      # same reason MCP_TOKENS is empty: nothing off the host can reach the
+      # port. Set CONSOLE_TOKEN in .env to move it behind a secret path.
+      - CONSOLE_TOKEN=${CONSOLE_TOKEN:-}
       - DATA_DIR=/app/data
       - MCP_PUBLIC_BASE_URL=  # empty locally: no public HTTPS origin to hand out
       # Empty unless the sidecar is actually running — otherwise /health would

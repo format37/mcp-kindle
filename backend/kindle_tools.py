@@ -20,6 +20,10 @@ logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(os.getenv("DATA_DIR", "/app/data"))
 
+#: Per-operation SMTP timeout. Gmail's handshake is fast; anything near this
+#: means the port is filtered rather than slow.
+SMTP_TIMEOUT_S = int(os.getenv("SMTP_TIMEOUT_S", "30"))
+
 IMAGE_MEDIA_TYPES = {
     ".png": "image/png",
     ".jpg": "image/jpeg",
@@ -257,7 +261,10 @@ def send_epub_to_kindle(
     part.add_header("Content-Disposition", "attachment", filename=filename)
     msg.attach(part)
 
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+    # A timeout is not optional here: this runs on one of the four job worker
+    # threads, and a black-holed port 587 (common on a locked-down host) would
+    # otherwise pin that thread for the life of the process and hang shutdown.
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=SMTP_TIMEOUT_S) as server:
         server.starttls()
         server.login(sender_email, sender_password)
         server.sendmail(sender_email, recipient_email, msg.as_string())

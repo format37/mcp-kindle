@@ -390,6 +390,19 @@ def unique_asset_name(book_id: str, base: str, ext: str) -> str:
             n += 1
 
 
+def release_stem(book_id: str, name: str) -> None:
+    """Give back a stem reserved by :func:`unique_asset_name` but never written.
+
+    ``unique_asset_name`` reserves in-process so two concurrent producers cannot
+    pick the same filename. When the work between reserving and storing fails —
+    a rejected upload, a diagram that would not compile — the reservation would
+    otherwise leak for the life of the process and quietly push the next
+    ``cover`` to ``cover-2``.
+    """
+    with _LOCK:
+        _reserved_stems.get(book_id, set()).discard(_sanitise_stem(name))
+
+
 def _flatten_on_white(im: PILImage.Image) -> PILImage.Image:
     """Composite alpha onto white — a plain RGBA->L conversion ignores alpha and
     renders transparent regions with their (usually black) underlying RGB."""
@@ -435,7 +448,18 @@ def store_asset(
 
     try:
         im = PILImage.open(io.BytesIO(data))
+        # open() is a header read; the pixel count has to be rejected before
+        # load() allocates. PILImage.MAX_IMAGE_PIXELS on its own only warns
+        # between one and two times the limit and decodes anyway, which an
+        # HTTP-facing upload route cannot rely on.
+        if im.size[0] * im.size[1] > PILImage.MAX_IMAGE_PIXELS:
+            raise BookError(
+                f"{name!r} is {im.size[0]}x{im.size[1]}, more pixels than this server "
+                f"will decode. Downscale it first."
+            )
         im.load()
+    except BookError:
+        raise
     except Exception as e:
         raise BookError(
             f"Could not decode {len(data)} bytes as an image ({e}). Supported: PNG, JPEG, "

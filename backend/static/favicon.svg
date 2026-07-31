@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <title>kindle console</title>
+  <!--
+    Sibling of the podcast console's mark, and deliberately so: the same two
+    slashes that run through the whole design system (masthead, "// PREVIEW"
+    headings, footer), meeting whatever the server actually produces. There it
+    was a level bar; here it is a page with a turned corner.
+
+    Three shapes, not five, and 5-unit strokes with 4-unit gaps, for the same
+    reason as next door — at the real 16 px tab size anything finer collapses
+    into a blob. The page is solid rather than outlined for that same size: a
+    1-unit outline would disappear entirely, while the notched silhouette still
+    reads as paper.
+
+    No background — the tab strip supplies it. The media query makes the mark
+    dark on light browser chrome and light on dark, instead of a fixed fill
+    that vanishes in one of them.
+  -->
+  <style>
+    path { fill: #14141a; }
+    @media (prefers-color-scheme: dark) {
+      path { fill: #f4f4f5; }
+    }
+  </style>
+  <path d="M2 26 L7 6 h5 L7 26 Z"/>
+  <path d="M11 26 L16 6 h5 L16 26 Z"/>
+  <path d="M22 6 h4 l4 4 v16 h-8 Z"/>
+</svg>

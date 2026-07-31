@@ -12,6 +12,10 @@ Everything that produces bytes — Gemini illustrations, PlantUML/Graphviz/D2/
 Mermaid diagrams, LaTeX, the EPUB, the preview pages — happens inside the
 server. The client only ever sends text.
 
+It also ships a private [web console](#web-console) over the same workspaces, so
+fixing a typo, swapping a cover or re-sending a book does not have to go through
+an agent.
+
 ---
 
 ## Two ways to drive it
@@ -33,6 +37,10 @@ inspect.
 
 The local flow is unchanged from the original server and still works exactly as
 before; the two share the same build pipeline.
+
+There is a third way in, for a human rather than an agent: the [web
+console](#web-console) at `/kindle/console`, which drives the same workspaces by
+hand — edit the document, rebuild the preview, swap the cover, send the book.
 
 ### The remote loop
 
@@ -231,6 +239,77 @@ the outbound attachment at 25 MB and base64 adds ~33%.
 
 ---
 
+## Web console
+
+A private console at `/kindle/console`: the same server, driven by hand instead
+of by an agent. It is server-rendered HTML out of the process that owns the
+books — no build step, no second container, no JSON API in between, so it cannot
+drift out of sync with the data because it *is* the data. JavaScript is three
+small things (the theme toggle, the select-all niceties, a copy-filename
+helper), all progressive enhancement; every page works with JS off.
+
+**The index** lists every workspace on one page — no pagination — with
+checkboxes, select-all and bulk delete, and a strip for what is on disk and
+whether delivery is configured.
+
+**A book page** is the whole workspace in one screen:
+
+| | |
+|---|---|
+| **Build preview** | The real EPUB build, linted, rasterised, shown as a strip of page proofs you can click through. Same pipeline as `preview_book`, so it catches the same things. |
+| **Send to Kindle** | Builds and mails it, then records the outcome *on the book* — where `book_status` shows it to the agent too, so neither of you sends it twice believing it was the first time. |
+| **Document** | The stored HTML in a textarea, with the title, the cover picker and the notes. Saving is `set_document`; the cover you pick here is also what a later `send_book()` uses with no argument. |
+| **Assets** | Every image with its dimensions, size, cover mark, and **how many times the document references it** — `UNUSED` is the one that is safe to delete. Uploads are normalised for e-ink exactly like a generated illustration. |
+| **Downloads** | `book.epub`, `preview.pdf`, `doc.html`. |
+
+Long work goes through the same job runner the MCP tools use: the POST returns
+at once, the page follows the build with a meta refresh, and a second click
+joins the running job rather than starting a rival one over the same files. The
+console builds into `out/console/`, deliberately separate from the directory
+`preview_book` writes to, so an agent's preview and yours can never show each
+other's pages.
+
+**The library page** browses the flat `data/` folder — the images
+`send_html_to_kindle` resolves a bare `<img src="cover.jpg">` against, and what
+Claude Code drops in over the bind mount. Thumbnails are cached in
+`data/.thumbs`; click a filename to copy it. Bytes here are stored and embedded
+**unchanged**, unlike book assets, because a picture prepared deliberately
+should reach the EPUB as you made it.
+
+**The settings page** owns `SENDER_EMAIL`, `GMAIL_APP_PASS`, `RECIPIENT_EMAIL`
+and `GEMINI_API_KEY`, so changing a Kindle address or rotating a key is not a
+container restart. Values live in `data/settings.json` (chmod 600, created 0600
+rather than chmod'ed afterwards) and a stored value wins over the environment
+until the field is cleared again — the page says which source each live value
+came from, so it can never be a mystery. Secret inputs render **empty**, never
+pre-filled with their own mask: blank means "unchanged", and dropping one takes
+a deliberate *clear it* checkbox. A new Gemini key takes effect immediately —
+the cached client is dropped on save.
+
+**SAVE & SEND TEST** signs in to Gmail *and* mails a one-page book. Both stages
+are needed and the wording never claims more than it proved: an SMTP login can
+succeed while Amazon silently discards the mail because the sender is not an
+approved one, so the result says "handed to Gmail", not "delivered".
+
+### Access
+
+`CONSOLE_TOKEN` is a **separate secret from `MCP_TOKENS`**, on purpose. The
+console URL is the one you paste into a phone or leave open in a tab, and it can
+send books and change credentials — sharing it must never hand over the
+credential that drives the MCP. With it set, the console moves to
+`/kindle/<CONSOLE_TOKEN>/console` and the unprefixed path 404s; every link on
+the page keeps the prefix, and the token is redacted from the access log.
+
+The server **refuses to start** without one whenever `MCP_REQUIRE_AUTH` or
+`MCP_PUBLIC_BASE_URL` is set, and rejects a token that collides with an MCP
+token, matches a route segment, or is shorter than 16 characters.
+
+```bash
+openssl rand -hex 24        # then: CONSOLE_TOKEN=... in .env
+```
+
+---
+
 ## Setup
 
 ### 1. Gmail app password
@@ -294,6 +373,10 @@ claude mcp add --transport http kindle http://localhost:8018/kindle/
 `./data` is bind-mounted at `/app/data`, which is what lets the local flow drop
 image files in and reference them by filename.
 
+The web console is at <http://localhost:8018/kindle/console>. Unguarded here,
+for the same reason `MCP_TOKENS` is empty: nothing off the host can reach the
+port. Set `CONSOLE_TOKEN` in `.env` to move it behind a secret path anyway.
+
 Mermaid is behind a compose profile, since it costs an extra container:
 
 ```bash
@@ -320,6 +403,11 @@ It sets `MCP_REQUIRE_AUTH=true`, `MCP_ALLOW_URL_TOKENS=true`,
 the mermaid sidecar unprofiled — the web flow cannot pre-render diagrams
 locally, so Mermaid must always be there. `MCP_TOKENS` comes from `.env`:
 generate them with `openssl rand -hex 32`.
+
+`CONSOLE_TOKEN` must be in `.env` too, or the container refuses to start; the
+console is then at `https://<host>/kindle/<CONSOLE_TOKEN>/console`, which the
+Caddy block below already covers. Add `request_body { max_size 26MB }` to that
+block if you want uploads bounded at the proxy as well as in the app.
 
 ### Caddy
 
@@ -385,8 +473,9 @@ actually touch:
 
 | Variable | Meaning |
 |---|---|
-| `SENDER_EMAIL`, `GMAIL_APP_PASS`, `RECIPIENT_EMAIL` | Delivery. Required; without them the send tools refuse. |
-| `GEMINI_API_KEY` | Enables `generate_images`. |
+| `SENDER_EMAIL`, `GMAIL_APP_PASS`, `RECIPIENT_EMAIL` | Delivery. Required; without them the send tools refuse. Also settable from the console, which then wins. |
+| `GEMINI_API_KEY` | Enables `generate_images`. Also settable from the console, live, without a restart. |
+| `CONSOLE_TOKEN` | Secret path segment guarding the web console. Separate from `MCP_TOKENS`; **mandatory** on any public deployment. |
 | `MCP_TOKENS` | Comma-separated bearer tokens. Empty => auth disabled (localhost only). |
 | `MCP_REQUIRE_AUTH` | Reject every unauthenticated request. Set `true` on anything public. |
 | `MCP_ALLOW_URL_TOKENS` | Accept `?token=` and `/kindle/<token>/`. Needed for claude.ai. |
@@ -396,6 +485,7 @@ actually touch:
 | `MCP_NAME` | Service name; drives the URL prefix (`/kindle`) and the MCP server name. |
 | `DATA_DIR`, `BOOK_MAX_AGE_DAYS` | Storage root and workspace retention. |
 | `MAX_SEND_BYTES`, `MCP_SOFT_TIMEOUT_S`, `PREVIEW_MAX_PAGES` | Mail cap, inline-vs-job threshold, preview page cap. |
+| `CONSOLE_PREVIEW_PAGES`, `CONSOLE_PAGE_PX`, `CONSOLE_THUMB_PX`, `MAX_UPLOAD_BYTES` | Console page proofs, thumbnail size, upload cap. |
 
 Renderer tuning (`DIAGRAM_TIMEOUT_S`, `DIAGRAM_MAX_CONCURRENCY`, `GRAPHVIZ_DPI`,
 `D2_PNG_WIDTH`, `MATH_DPI`, `MATH_FONTSIZE`, `MERMAID_INIT`), fetch limits and
@@ -420,6 +510,24 @@ environment; the ones worth tuning are annotated in `.env.example`.
 | Lint reports unrendered blocks even though preview pages look fine | The block never reached a renderer (wrong class, or nested in a stripped element) | Fix the class, re-`set_document`, preview again |
 | Book never arrives, no error from the tool | Sender not on Amazon's approved list, or wrong `@kindle.com` address | Check *Manage Your Content and Devices* -> Preferences -> Personal Document Settings |
 | Preview unavailable but sending works | WeasyPrint or poppler-utils missing/broken in the image | `/health` reports `preview: false`; the tool's own error names the missing piece (libpango/libcairo, a font family, `pdftoppm`). Rebuild the image |
+| Container exits at once: "CONSOLE_TOKEN is empty on a publicly reachable deployment" | Working as intended — the console can send books and edit credentials, so it must not sit at a guessable path once `MCP_REQUIRE_AUTH` or `MCP_PUBLIC_BASE_URL` is set | `openssl rand -hex 24` into `CONSOLE_TOKEN` in `.env`, then recreate |
+| Console renders unstyled; the CSS 404s | Route order — the static route must precede `/{book_id}`, and Caddy must pass `/kindle/*` through | Check `curl -o /dev/null -w '%{http_code}' <console>/assets/console.css` |
+| Console page proofs look stale after an edit | The preview was not rebuilt; the page says so | The banner reads "the document has changed since this preview was built" — press BUILD PREVIEW. Old page images are deleted on every rebuild, so what you see is never a mix of two builds |
+| Sent it from the console, nothing arrived, no error | Gmail accepted the mail and Amazon dropped it — the sender is not an approved one | Settings -> SAVE & SEND TEST states this explicitly; fix the sender under Amazon's *Personal Document Settings* |
+
+---
+
+## Tests
+
+```bash
+docker compose run --rm --entrypoint sh mcp-kindle \
+    -c "pip install -q pytest && python -m pytest tests"
+```
+
+Inside the image, because that is where every dependency already is. They cover
+the four console failures that are silent in production: a credential overwritten
+by its own mask, a page proof left behind from a previous build, a path escaping
+the data folder, and an upload clobbering the asset the document points at.
 
 ---
 
@@ -427,7 +535,7 @@ environment; the ones worth tuning are annotated in `.env.example`.
 
 ```
 backend/
-  main.py          MCP tool surface, routes, token auth, transport security
+  main.py          MCP tool surface, console handlers, routes, token auth
   books.py         book workspaces + the one asset normaliser
   html_tools.py    HTML -> sanitise -> render blocks -> embed images -> EPUB
   kindle_tools.py  EPUB -> Gmail SMTP
@@ -437,6 +545,12 @@ backend/
   preview.py       EPUB -> PDF -> page images, plus the lint pass
   fetch.py         SSRF-guarded image download
   jobs.py          soft-timeout background jobs
+  console.py       the web console's HTML
+  settings.py      runtime credentials (env <- data/settings.json, chmod 600)
+  library.py       the flat data/ image folder
+  thumbs.py        cached grid thumbnails
+  static/          console.css, icons, self-hosted fonts
+  tests/           console tests (run them in the image)
 docker-compose.yml       local, 127.0.0.1:8018
 docker-compose.vps.yml   VPS, behind Caddy on the mcp-shared network
 .env.example             every environment variable, annotated

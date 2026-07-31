@@ -13,7 +13,10 @@
 #   docker compose -f docker-compose.vps.yml up -d --build
 #
 # .env lives on the VPS only (SENDER_EMAIL, GMAIL_APP_PASS, RECIPIENT_EMAIL,
-# GEMINI_API_KEY, MCP_TOKENS) and is gitignored — see .env.example.
+# GEMINI_API_KEY, MCP_TOKENS, CONSOLE_TOKEN) and is gitignored — see
+# .env.example. CONSOLE_TOKEN is mandatory here: the container refuses to start
+# without one when MCP_REQUIRE_AUTH is true, because the console at
+# /kindle/<CONSOLE_TOKEN>/console can send books and edit credentials.
 services:
   mcp-kindle:
     build:
