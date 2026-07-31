@@ -350,6 +350,27 @@ in the console's own origin, where the URL is the credential.
 
 ---
 
+## Skill
+
+The full authoring playbook for an agent — mandatory grayscale cover, when to
+use the one-shot vs. the workspace path, diagram/math escaping rules, e-ink
+constraints, the preview-then-send loop — lives in
+[`skills/kindle/SKILL.md`](skills/kindle/SKILL.md). Install it wherever a
+Claude drives this server; without it, agents tend to skip the preview and
+ship ASCII diagrams.
+
+```bash
+# Claude Code: installs into ~/.claude/skills/ with this clone's path filled in
+./skills/install.sh
+
+# Also emit a zip for claude.ai (Customize -> Skills -> + -> Create skill)
+./skills/install.sh --zip ~/kindle-skill.zip
+```
+
+Re-run after a `git pull` to refresh the installed copy.
+
+---
+
 ## Setup
 
 ### 1. Gmail app password
